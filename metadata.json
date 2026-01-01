@@ -1,0 +1,5 @@
+{
+  "name": "Konquest AI",
+  "description": "A minimalist, turn-based strategy game inspired by Konkr.io. Capture nodes, manage army strength, and defeat the AI opponent powered by Gemini.",
+  "requestFramePermissions": []
+}
