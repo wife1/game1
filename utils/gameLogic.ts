@@ -317,8 +317,20 @@ export const arriveNode = (
     if (unit.count > target.strength) {
       const remaining = unit.count - target.strength;
       target.owner = unit.owner;
-      target.strength = remaining;
-      log = `${unit.owner === Owner.PLAYER ? 'Blue' : 'Red'} captured a node!`;
+      
+      // Calculate final strength (including possible aggression bonuses)
+      let finalStrength = remaining;
+      let bonusMsg = '';
+
+      // AI Aggression Bonus: Reward attacking play
+      if (unit.owner === Owner.AI) {
+          const bonus = 2; // +2 Strength on Capture
+          finalStrength += bonus;
+          bonusMsg = ` (+${bonus} Fury)`;
+      }
+
+      target.strength = finalStrength;
+      log = `${unit.owner === Owner.PLAYER ? 'Blue' : 'Red'} captured a node!${bonusMsg}`;
       moveType = 'CAPTURE';
     } else {
       target.strength -= unit.count;
