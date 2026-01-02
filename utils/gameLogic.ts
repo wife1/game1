@@ -155,7 +155,8 @@ export const getVisibleNodeIds = (
   nodes: GameNode[], 
   edges: GameEdge[], 
   fogEnabled: boolean = true, 
-  radius: number = 1
+  radius: number = 1,
+  observer: Owner = Owner.PLAYER
 ): Set<string> => {
   // If fog is disabled, return all node IDs
   if (!fogEnabled) {
@@ -164,12 +165,12 @@ export const getVisibleNodeIds = (
 
   const visible = new Set<string>();
   
-  // 1. Identify all player nodes and initialize Queue
-  const playerNodes = nodes.filter(n => n.owner === Owner.PLAYER);
-  const queue: {id: string, depth: number}[] = playerNodes.map(n => ({ id: n.id, depth: 0 }));
+  // 1. Identify all observer nodes (Player or AI) and initialize Queue
+  const observerNodes = nodes.filter(n => n.owner === observer);
+  const queue: {id: string, depth: number}[] = observerNodes.map(n => ({ id: n.id, depth: 0 }));
   
-  // Mark player nodes as visible immediately
-  playerNodes.forEach(n => visible.add(n.id));
+  // Mark own nodes as visible immediately
+  observerNodes.forEach(n => visible.add(n.id));
   
   // 2. Build Adjacency List for fast lookup
   const adj = new Map<string, string[]>();
@@ -182,7 +183,7 @@ export const getVisibleNodeIds = (
   
   // 3. BFS to find nodes within radius
   // visited set tracks nodes we've already added to the queue to avoid cycles
-  const visited = new Set<string>(playerNodes.map(n => n.id));
+  const visited = new Set<string>(observerNodes.map(n => n.id));
   
   let head = 0;
   while(head < queue.length) {
@@ -261,18 +262,18 @@ export const arriveNode = (
 
   if (unit.owner === target.owner) {
     target.strength += unit.count;
-    log = `${unit.owner === Owner.PLAYER ? 'Player' : 'AI'} reinforced with ${unit.count} soldiers.`;
+    log = `${unit.owner === Owner.PLAYER ? 'Blue' : 'Red'} reinforced with ${unit.count}.`;
     moveType = 'REINFORCE';
   } else {
     if (unit.count > target.strength) {
       const remaining = unit.count - target.strength;
       target.owner = unit.owner;
       target.strength = remaining;
-      log = `${unit.owner === Owner.PLAYER ? 'Player' : 'AI'} captured a node with ${remaining} soldiers remaining!`;
+      log = `${unit.owner === Owner.PLAYER ? 'Blue' : 'Red'} captured a node!`;
       moveType = 'CAPTURE';
     } else {
       target.strength -= unit.count;
-      log = `${unit.owner === Owner.PLAYER ? 'Player' : 'AI'} attacked but failed to capture.`;
+      log = `${unit.owner === Owner.PLAYER ? 'Blue' : 'Red'} attacked!`;
       moveType = 'ATTACK';
     }
   }

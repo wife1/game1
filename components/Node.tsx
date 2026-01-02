@@ -10,10 +10,11 @@ interface NodeProps {
   isVisible: boolean;
   incomingStrength: number;
   isAIThinking?: boolean;
+  isAttack?: boolean;
   onClick: (id: string) => void;
 }
 
-export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVisible, incomingStrength, isAIThinking, onClick }) => {
+export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVisible, incomingStrength, isAIThinking, isAttack, onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [bumpScale, setBumpScale] = useState(1);
   const [showRipple, setShowRipple] = useState(false);
@@ -66,10 +67,8 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
   }, [node.strength, node.owner, isVisible]);
 
   // Combat Prediction Logic
-  // Only applies if node is targetable and is NOT owned by Player (i.e. Attack)
-  // Ensure we actually have incoming strength > 0 to constitute a valid move
-  const isCombatTarget = isTargetable && node.owner !== Owner.PLAYER && incomingStrength > 0;
-  const canConquer = isCombatTarget && incomingStrength > node.strength;
+  // Only applies if node is targetable and it is an attack (Enemy or Neutral)
+  const canConquer = incomingStrength > node.strength;
   
   // AI Thinking Visualization
   const isAIThinkingNode = isAIThinking && node.owner === Owner.AI && isVisible;
@@ -82,9 +81,9 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
   const getStroke = () => {
       if (!isVisible) return '#334155'; // Slate 700 for Fog Border
       
-      // Combat Prediction Overlay
-      if (isHovered && isCombatTarget) {
-          return canConquer ? '#4ade80' : '#ef4444'; // Green 400 (Win) or Red 500 (Lose)
+      // Combat Prediction Overlay (Attack on Enemy or Neutral)
+      if (isHovered && isTargetable && incomingStrength > 0 && isAttack) {
+          return canConquer ? '#4ade80' : '#ef4444'; 
       }
 
       if (isSelected) return 'white';
@@ -94,7 +93,7 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
   
   const stroke = getStroke();
   
-  const strokeWidth = (isHovered && isCombatTarget) ? 4 : (isSelected ? 4 : isTargetable ? 3 : 2);
+  const strokeWidth = (isHovered && isTargetable && incomingStrength > 0 && isAttack) ? 4 : (isSelected ? 4 : isTargetable ? 3 : 2);
   const opacity = isVisible ? 1 : 0.3;
   const cursor = isVisible ? 'pointer' : 'default';
 
@@ -115,15 +114,16 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
     if (node.isCapital) typeLabel = "Capital";
     
     let ownerLabel = "Neutral";
-    if (node.owner === Owner.PLAYER) ownerLabel = node.isCapital ? "Your" : "Player";
-    if (node.owner === Owner.AI) ownerLabel = node.isCapital ? "Enemy" : "Enemy";
+    if (node.owner === Owner.PLAYER) ownerLabel = "Blue";
+    if (node.owner === Owner.AI) ownerLabel = "Red";
 
     const title = `${ownerLabel} ${typeLabel}`;
     
     const income = node.isCapital ? 5 : 1;
     let baseText = `${title}\nStrength: ${node.strength}\n${node.owner !== Owner.NEUTRAL ? `Generates +${income} unit/turn` : "Capture to grow"}`;
     
-    if (isHovered && isCombatTarget) {
+    // Combat Preview
+    if (isHovered && isTargetable && incomingStrength > 0 && isAttack) {
         const result = canConquer ? "VICTORY GUARANTEED" : "ATTACK WILL FAIL";
         const remaining = canConquer ? (incomingStrength - node.strength) : (node.strength - incomingStrength);
         baseText += `\n\n[COMBAT PREVIEW]\n${result}\nResult: ${remaining} units left`;
@@ -229,8 +229,8 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
                 <UnitIcon />
             </g>
 
-            {/* Combat Prediction Icon Overlay */}
-            {isHovered && isCombatTarget && (
+            {/* Combat Prediction Icon Overlay (Visible on Attack) */}
+            {isHovered && isTargetable && incomingStrength > 0 && isAttack && (
                 <g transform="translate(14, -22)" className="animate-pulse">
                    <circle r="9" fill={canConquer ? "#4ade80" : "#ef4444"} stroke="white" strokeWidth="1.5" />
                    <g transform="translate(-6, -6)">

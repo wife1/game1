@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Save, Download, Trash2, Shield, Sword, Scale, Eye, EyeOff } from 'lucide-react';
+import { X, Save, Download, Trash2, Shield, Sword, Scale, Eye, EyeOff, Signal, BarChart3, TrendingUp } from 'lucide-react';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -69,21 +69,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Difficulty Slider */}
              <div className="space-y-3">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                     <label className="text-sm font-bold text-slate-300 uppercase tracking-wider">AI Difficulty</label>
                     <span className="text-xs font-mono bg-slate-900 px-2 py-0.5 rounded text-slate-400">
-                        {difficulty <= 0.5 ? "Easy" : difficulty >= 1.5 ? "Hard" : "Normal"} ({difficulty.toFixed(1)}x)
+                        {difficulty.toFixed(1)}x Strength
                     </span>
                 </div>
-                <input 
-                    type="range" 
-                    min="0.5" 
-                    max="2.0" 
-                    step="0.1"
-                    value={difficulty}
-                    onChange={(e) => setDifficulty(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
+                
+                {/* Presets */}
+                <div className="grid grid-cols-3 gap-2">
+                    <button 
+                        onClick={() => setDifficulty(0.5)}
+                        className={`py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${difficulty === 0.5 ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-500'}`}
+                    >
+                        <Signal size={14} /> Easy
+                    </button>
+                    <button 
+                        onClick={() => setDifficulty(1.0)}
+                        className={`py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${difficulty === 1.0 ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-500'}`}
+                    >
+                        <BarChart3 size={14} /> Normal
+                    </button>
+                    <button 
+                        onClick={() => setDifficulty(1.5)}
+                        className={`py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${difficulty === 1.5 ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-500'}`}
+                    >
+                        <TrendingUp size={14} /> Hard
+                    </button>
+                </div>
+
+                <div className="pt-2">
+                    <input 
+                        type="range" 
+                        min="0.5" 
+                        max="2.0" 
+                        step="0.1"
+                        value={difficulty}
+                        onChange={(e) => setDifficulty(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                     <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1 mt-1">
+                        <span>0.5x</span>
+                        <span>1.0x</span>
+                        <span>1.5x</span>
+                        <span>2.0x</span>
+                    </div>
+                </div>
             </div>
 
             {/* Fog Toggle */}

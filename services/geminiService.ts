@@ -4,7 +4,7 @@ import { GameNode, GameEdge, AIMoveRequest, Owner } from '../types';
 /**
  * Fallback Heuristic AI
  * Used when the Gemini API is unavailable or rate-limited.
- * Implements basic strategy: Attack Weakest Enemy > Expand to Weakest Neutral (preferring Player neighbors) > Reinforce Randomly
+ * Implements basic strategy: Defense/Fortify > Attack Weakest Enemy > Expand to Weakest Neutral > Reinforce
  */
 const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[] => {
   const moves: AIMoveRequest[] = [];
@@ -24,33 +24,77 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       adj.get(e.target)?.push(e.source);
   });
 
-  // Identify nodes that are adjacent to the PLAYER
-  // Capturing these puts pressure on the player
+  // Identify Player Neighbors (Nodes that exert pressure on player)
   const playerNeighborIds = new Set<string>();
   nodes.filter(n => n.owner === Owner.PLAYER).forEach(pn => {
       const neighbors = adj.get(pn.id) || [];
       neighbors.forEach(nid => playerNeighborIds.add(nid));
   });
 
+  // Identify Threatened AI Nodes (AI nodes adjacent to Player)
+  const threatenedAiNodes = new Set<string>();
+  nodes.filter(n => n.owner === Owner.AI).forEach(n => {
+      const neighbors = adj.get(n.id) || [];
+      const hasEnemyNeighbor = neighbors.some(nid => {
+          const neighbor = nodes.find(node => node.id === nid);
+          return neighbor?.owner === Owner.PLAYER;
+      });
+      if (hasEnemyNeighbor) {
+          threatenedAiNodes.add(n.id);
+      }
+  });
+
   for (const source of aiNodes) {
       const neighborIds = adj.get(source.id) || [];
       const neighbors = nodes.filter(n => neighborIds.includes(n.id));
 
-      // Strategy A: Attack Killable Enemies (High Priority)
+      const isSourceThreatened = threatenedAiNodes.has(source.id);
+
+      // --- STRATEGY 1: HOLD THE LINE (Self-Defense) ---
+      // If I am threatened (next to enemy), moving out leaves me with 1 HP.
+      // Only move if I can KILL an enemy to remove the threat.
+      // Otherwise, STAY PUT to force them to fight my full stack.
+      if (isSourceThreatened) {
+          const killableEnemies = neighbors.filter(n => n.owner === Owner.PLAYER && n.strength < source.strength);
+          if (killableEnemies.length > 0) {
+              // Attack the strongest killable enemy (prioritize capital)
+              killableEnemies.sort((a, b) => {
+                if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
+                return b.strength - a.strength;
+              });
+              moves.push({ fromId: source.id, toId: killableEnemies[0].id });
+              continue; // Action taken
+          }
+          // If we can't kill the threat, DO NOT MOVE. Defend.
+          continue; 
+      }
+
+      // --- STRATEGY 2: FORTIFY (Help Neighbors) ---
+      // If I am safe, but a neighbor is threatened, send them reinforcements.
+      // This is prioritized over attacking or expanding to ensure defense.
+      const threatenedFriendlies = neighbors.filter(n => n.owner === Owner.AI && threatenedAiNodes.has(n.id));
+      if (threatenedFriendlies.length > 0) {
+          // Prioritize the one with the lowest strength (most effectively saved)
+          threatenedFriendlies.sort((a, b) => a.strength - b.strength);
+          moves.push({ fromId: source.id, toId: threatenedFriendlies[0].id });
+          continue; // Action taken
+      }
+
+      // --- STRATEGY 3: ATTACK (Flanking/Offense) ---
+      // Attack from a safe node into an enemy
       const enemies = neighbors.filter(n => n.owner === Owner.PLAYER);
       const killableEnemies = enemies.filter(n => n.strength < source.strength);
       
       if (killableEnemies.length > 0) {
-          // Prioritize Capital, then strongest enemy we can beat (to reduce their threat)
           killableEnemies.sort((a, b) => {
               if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
               return b.strength - a.strength; 
           });
           moves.push({ fromId: source.id, toId: killableEnemies[0].id });
-          continue; // Unit used
+          continue; // Action taken
       }
 
-      // Strategy B: Capture Neutrals (Expansion)
+      // --- STRATEGY 4: EXPAND (Capture Neutrals) ---
       const neutrals = neighbors.filter(n => n.owner === Owner.NEUTRAL);
       const capturableNeutrals = neutrals.filter(n => n.strength < source.strength);
 
@@ -67,10 +111,10 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
               return a.strength - b.strength;
           });
           moves.push({ fromId: source.id, toId: capturableNeutrals[0].id });
-          continue; // Unit used
+          continue; // Action taken
       }
 
-      // Strategy D: Reinforce / Move Frontline
+      // --- STRATEGY 5: REINFORCE (Move Frontline) ---
       // If no attacks, move to a friendly node. Ideally one that has enemy neighbors.
       const friendlies = neighbors.filter(n => n.owner === Owner.AI);
       if (friendlies.length > 0 && source.strength > 5) {
@@ -112,12 +156,10 @@ export const getAIMoves = async (
   const ai = new GoogleGenAI({ apiKey });
 
   // Optimization: Build Adjacency List separately to reduce JSON token count
-  // Nested objects in the previous version caused large payloads.
   const adj: Record<string, string[]> = {};
   edges.forEach(e => {
       if (!adj[e.source]) adj[e.source] = [];
       if (!adj[e.target]) adj[e.target] = [];
-      // Use Set logic implicitly by checking inclusion or just allow dupes (Game logic handles dupes fine, but let's be clean)
       if (!adj[e.source].includes(e.target)) adj[e.source].push(e.target);
       if (!adj[e.target].includes(e.source)) adj[e.target].push(e.source);
   });
@@ -147,24 +189,32 @@ export const getAIMoves = async (
   }
 
   let difficultyPrompt = "";
-  if (difficulty <= 0.5) {
-    difficultyPrompt = `DIFFICULTY: EASY. Make random moves.`;
-  } else if (difficulty >= 1.5) {
-    difficultyPrompt = `DIFFICULTY: HARD. Maximize damage.`;
-  } else {
-    difficultyPrompt = `DIFFICULTY: NORMAL. Play logically.`;
+  // 0.5x <= Easy < 1.0x
+  if (difficulty < 1.0) {
+    difficultyPrompt = `DIFFICULTY: EASY. Make somewhat random moves. Focus on expansion but make mistakes.`;
+  } 
+  // 1.5x <= Hard <= 2.0x
+  else if (difficulty >= 1.5) {
+    difficultyPrompt = `DIFFICULTY: HARD. Play optimally. Maximize damage. Ruthlessly exploit weakness. Anticipate player moves.`;
+  } 
+  // 1.0x <= Normal < 1.5x
+  else {
+    difficultyPrompt = `DIFFICULTY: NORMAL. Play logically. Balance offense and defense.`;
   }
 
   const systemPrompt = `
     Play Konquest as 'AI'. Eliminate 'PLAYER'.
-    Rules: Moves send ALL strength-1.
+    Rules: Moves send ALL strength-1. Moving leaves the source node with 1 strength.
     Input: JSON with 'nodes' array (id, o=owner, s=strength, c=capital) and 'adj' object (id -> list of neighbor ids).
     Output: JSON moves array {fromId, toId}.
     
     Goals:
     1. Capture Nodes (My Strength > Their Strength).
-    2. PRESSURE: When capturing Neutrals, prioritize those adjacent to PLAYER nodes (use 'adj' to check neighbors).
-    3. Reinforce Front.
+    2. DEFENSE & FORTIFICATION: 
+       - If an AI node is adjacent to a PLAYER node, it is THREATENED. 
+       - PRIORITIZE moving units from SAFE AI nodes into THREATENED AI nodes to fortify them.
+       - DO NOT move units OUT of a threatened node unless attacking a weaker enemy. Moving out makes it easy for the enemy to capture it.
+    3. PRESSURE: When capturing Neutrals, prioritize those adjacent to PLAYER nodes.
     4. Protect Capital.
     
     ${aggressionPrompt}
@@ -208,13 +258,11 @@ export const getAIMoves = async (
   } catch (error: any) {
     const msg = error.message || '';
     
-    // Check for Quota limits
+    // Check for Quota limits or network errors
     const isQuota = msg.includes('429') || 
                     error.status === 'RESOURCE_EXHAUSTED' || 
                     (error.error && error.error.code === 429);
 
-    // Check for Network/Server errors (XHR, 500, RPC failed)
-    // These are often transient or payload-related.
     const isNetworkOrServer = msg.includes('xhr error') || 
                               msg.includes('500') || 
                               msg.includes('Rpc failed') ||
