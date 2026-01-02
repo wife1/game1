@@ -1,5 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameNode, GameEdge, AIMoveRequest, Owner } from '../types';
+import { findPath } from '../utils/gameLogic'; // Assuming gameLogic is available in same relative path structure
+
+// Helper to check if a node is "frontline" (adjacent to enemy)
+const isFrontline = (nodeId: string, nodes: GameNode[], adj: Map<string, string[]>) => {
+    const neighbors = adj.get(nodeId) || [];
+    return neighbors.some(nid => {
+        const n = nodes.find(x => x.id === nid);
+        return n && n.owner === Owner.PLAYER;
+    });
+};
 
 /**
  * Fallback Heuristic AI
@@ -24,24 +34,19 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       adj.get(e.target)?.push(e.source);
   });
 
-  // Identify Player Neighbors (Nodes that exert pressure on player)
+  // Identify Threatened AI Nodes (AI nodes adjacent to Player)
+  const threatenedAiNodes = new Set<string>();
+  nodes.filter(n => n.owner === Owner.AI).forEach(n => {
+      if (isFrontline(n.id, nodes, adj)) {
+          threatenedAiNodes.add(n.id);
+      }
+  });
+
+  // Identify Player Neighbor Ids for pressure logic
   const playerNeighborIds = new Set<string>();
   nodes.filter(n => n.owner === Owner.PLAYER).forEach(pn => {
       const neighbors = adj.get(pn.id) || [];
       neighbors.forEach(nid => playerNeighborIds.add(nid));
-  });
-
-  // Identify Threatened AI Nodes (AI nodes adjacent to Player)
-  const threatenedAiNodes = new Set<string>();
-  nodes.filter(n => n.owner === Owner.AI).forEach(n => {
-      const neighbors = adj.get(n.id) || [];
-      const hasEnemyNeighbor = neighbors.some(nid => {
-          const neighbor = nodes.find(node => node.id === nid);
-          return neighbor?.owner === Owner.PLAYER;
-      });
-      if (hasEnemyNeighbor) {
-          threatenedAiNodes.add(n.id);
-      }
   });
 
   for (const source of aiNodes) {
@@ -51,47 +56,37 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       const isSourceThreatened = threatenedAiNodes.has(source.id);
 
       // --- STRATEGY 1: HOLD THE LINE (Self-Defense) ---
-      // If I am threatened (next to enemy), moving out leaves me with 1 HP.
-      // Only move if I can KILL an enemy to remove the threat.
-      // Otherwise, STAY PUT to force them to fight my full stack.
       if (isSourceThreatened) {
           const killableEnemies = neighbors.filter(n => n.owner === Owner.PLAYER && n.strength < source.strength);
           if (killableEnemies.length > 0) {
-              // Attack the strongest killable enemy (prioritize capital)
               killableEnemies.sort((a, b) => {
                 if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
                 return b.strength - a.strength;
               });
               moves.push({ fromId: source.id, toId: killableEnemies[0].id });
-              continue; // Action taken
+              continue; 
           }
-          // If we can't kill the threat, DO NOT MOVE. Defend.
           continue; 
       }
 
       // --- STRATEGY 2: FORTIFY (Help Neighbors) ---
-      // If I am safe, but a neighbor is threatened, send them reinforcements.
-      // This is prioritized over attacking or expanding to ensure defense.
       const threatenedFriendlies = neighbors.filter(n => n.owner === Owner.AI && threatenedAiNodes.has(n.id));
       if (threatenedFriendlies.length > 0) {
-          // Prioritize the one with the lowest strength (most effectively saved)
           threatenedFriendlies.sort((a, b) => a.strength - b.strength);
           moves.push({ fromId: source.id, toId: threatenedFriendlies[0].id });
-          continue; // Action taken
+          continue; 
       }
 
       // --- STRATEGY 3: ATTACK (Flanking/Offense) ---
-      // Attack from a safe node into an enemy
       const enemies = neighbors.filter(n => n.owner === Owner.PLAYER);
       const killableEnemies = enemies.filter(n => n.strength < source.strength);
-      
       if (killableEnemies.length > 0) {
           killableEnemies.sort((a, b) => {
               if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
               return b.strength - a.strength; 
           });
           moves.push({ fromId: source.id, toId: killableEnemies[0].id });
-          continue; // Action taken
+          continue; 
       }
 
       // --- STRATEGY 4: EXPAND (Capture Neutrals) ---
@@ -99,36 +94,62 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       const capturableNeutrals = neutrals.filter(n => n.strength < source.strength);
 
       if (capturableNeutrals.length > 0) {
-          // Priority 1: Nodes that touch the Player (Pressure)
-          // Priority 2: Lowest strength (Cheapest expansion)
           capturableNeutrals.sort((a, b) => {
               const aIsThreat = playerNeighborIds.has(a.id);
               const bIsThreat = playerNeighborIds.has(b.id);
-              
               if (aIsThreat && !bIsThreat) return -1;
               if (!aIsThreat && bIsThreat) return 1;
-              
               return a.strength - b.strength;
           });
           moves.push({ fromId: source.id, toId: capturableNeutrals[0].id });
-          continue; // Action taken
+          continue; 
       }
 
-      // --- STRATEGY 5: REINFORCE (Move Frontline) ---
-      // If no attacks, move to a friendly node. Ideally one that has enemy neighbors.
-      const friendlies = neighbors.filter(n => n.owner === Owner.AI);
-      if (friendlies.length > 0 && source.strength > 5) {
-          // Try to find a friendly neighbor that is next to an enemy
-          const frontLineFriendly = friendlies.find(f => {
-               const fNeighbors = adj.get(f.id) || [];
-               return nodes.some(n => fNeighbors.includes(n.id) && n.owner === Owner.PLAYER);
-          });
+      // --- STRATEGY 5: REINFORCE (Deep Move to Frontline) ---
+      // If we are safe and have excess troops, find the nearest threatened node to reinforce.
+      if (source.strength > 5 && !isSourceThreatened) {
+          // BFS to find nearest threatened node (BFS is already optimal for unweighted distance)
+          // We can't use findPath easily here without importing it or duplicating bfs. 
+          // Let's implement a quick BFS search for a target.
+          
+          let queue = [source.id];
+          let visited = new Set([source.id]);
+          let bestTargetId: string | null = null;
+          
+          // Limit search depth to avoid full map scans
+          let depth = 0;
+          const MAX_DEPTH = 6; 
 
-          if (frontLineFriendly) {
-              moves.push({ fromId: source.id, toId: frontLineFriendly.id });
+          while(queue.length > 0 && depth < MAX_DEPTH) {
+              const levelSize = queue.length;
+              for(let i=0; i<levelSize; i++) {
+                  const currId = queue.shift()!;
+                  if (threatenedAiNodes.has(currId) && currId !== source.id) {
+                      bestTargetId = currId;
+                      break;
+                  }
+                  
+                  const nIds = adj.get(currId) || [];
+                  for (const nid of nIds) {
+                      if (!visited.has(nid)) {
+                          const nNode = nodes.find(x => x.id === nid);
+                          if (nNode && nNode.owner === Owner.AI) {
+                              visited.add(nid);
+                              queue.push(nid);
+                          }
+                      }
+                  }
+              }
+              if (bestTargetId) break;
+              depth++;
+          }
+
+          if (bestTargetId) {
+              moves.push({ fromId: source.id, toId: bestTargetId });
           } else {
-              // Random movement to prevent stagnation
-              if (Math.random() > 0.5) {
+             // Fallback: Random shuffle to prevent stagnation if no frontline found
+             const friendlies = neighbors.filter(n => n.owner === Owner.AI);
+              if (friendlies.length > 0 && Math.random() > 0.5) {
                   const randomFriendly = friendlies[Math.floor(Math.random() * friendlies.length)];
                   moves.push({ fromId: source.id, toId: randomFriendly.id });
               }
@@ -147,15 +168,12 @@ export const getAIMoves = async (
 ): Promise<AIMoveRequest[]> => {
   const apiKey = process.env.API_KEY;
   
-  // Immediate fallback if no key
   if (!apiKey) {
-    // console.warn("No API Key available. Using heuristic AI.");
     return getFallbackMoves(nodes, edges);
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  // Optimization: Build Adjacency List separately to reduce JSON token count
   const adj: Record<string, string[]> = {};
   edges.forEach(e => {
       if (!adj[e.source]) adj[e.source] = [];
@@ -164,7 +182,6 @@ export const getAIMoves = async (
       if (!adj[e.target].includes(e.source)) adj[e.target].push(e.source);
   });
 
-  // Minimized state representation
   const simplifiedState = {
     nodes: nodes.map(n => ({
        id: n.id,
@@ -189,15 +206,12 @@ export const getAIMoves = async (
   }
 
   let difficultyPrompt = "";
-  // 0.5x <= Easy < 1.0x
   if (difficulty < 1.0) {
     difficultyPrompt = `DIFFICULTY: EASY. Make somewhat random moves. Focus on expansion but make mistakes.`;
   } 
-  // 1.5x <= Hard <= 2.0x
   else if (difficulty >= 1.5) {
     difficultyPrompt = `DIFFICULTY: HARD. Play optimally. Maximize damage. Ruthlessly exploit weakness. Anticipate player moves.`;
   } 
-  // 1.0x <= Normal < 1.5x
   else {
     difficultyPrompt = `DIFFICULTY: NORMAL. Play logically. Balance offense and defense.`;
   }
@@ -213,7 +227,8 @@ export const getAIMoves = async (
     2. DEFENSE & FORTIFICATION: 
        - If an AI node is adjacent to a PLAYER node, it is THREATENED. 
        - PRIORITIZE moving units from SAFE AI nodes into THREATENED AI nodes to fortify them.
-       - DO NOT move units OUT of a threatened node unless attacking a weaker enemy. Moving out makes it easy for the enemy to capture it.
+       - You can move units through friendly territory to reach a distant node.
+       - DO NOT move units OUT of a threatened node unless attacking a weaker enemy.
     3. PRESSURE: When capturing Neutrals, prioritize those adjacent to PLAYER nodes.
     4. Protect Capital.
     
@@ -256,26 +271,7 @@ export const getAIMoves = async (
     return data.moves || [];
 
   } catch (error: any) {
-    const msg = error.message || '';
-    
-    // Check for Quota limits or network errors
-    const isQuota = msg.includes('429') || 
-                    error.status === 'RESOURCE_EXHAUSTED' || 
-                    (error.error && error.error.code === 429);
-
-    const isNetworkOrServer = msg.includes('xhr error') || 
-                              msg.includes('500') || 
-                              msg.includes('Rpc failed') ||
-                              msg.includes('Failed to fetch');
-
-    if (isQuota) {
-        console.warn("Gemini Quota Exceeded. Using Fallback AI.");
-    } else if (isNetworkOrServer) {
-        console.warn("Gemini Connection Error (XHR/RPC). Using Fallback AI.");
-    } else {
-        console.error("Gemini API Error:", error);
-    }
-    
+    console.error("Gemini API Error:", error);
     return getFallbackMoves(nodes, edges);
   }
 };

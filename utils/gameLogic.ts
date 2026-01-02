@@ -216,6 +216,55 @@ export const processTurnIncome = (nodes: GameNode[]): GameNode[] => {
   });
 };
 
+export const findPath = (
+    nodes: GameNode[], 
+    edges: GameEdge[], 
+    startId: string, 
+    endId: string, 
+    owner: Owner
+): Point[] | null => {
+    // 1. Build Adjacency List
+    const adj = new Map<string, string[]>();
+    edges.forEach(e => {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        if (!adj.has(e.target)) adj.set(e.target, []);
+        adj.get(e.source)?.push(e.target);
+        adj.get(e.target)?.push(e.source);
+    });
+
+    // 2. BFS
+    // Queue stores { id, path: [list of node IDs] }
+    const queue: {id: string, path: string[]}[] = [{ id: startId, path: [startId] }];
+    const visited = new Set<string>([startId]);
+
+    while(queue.length > 0) {
+        const { id, path } = queue.shift()!;
+        
+        if (id === endId) {
+            // Found it. Map IDs to Points.
+            return path
+                .map(pid => nodes.find(n => n.id === pid)?.position)
+                .filter(p => p !== undefined) as Point[];
+        }
+
+        const neighbors = adj.get(id) || [];
+        for (const nid of neighbors) {
+            if (!visited.has(nid)) {
+                const node = nodes.find(n => n.id === nid);
+                // Valid traversal: Node must exist.
+                // It must be owned by the mover (friendly territory) OR it must be the final destination (attack/move to).
+                // Note: If attacking, you can only move to adjacent enemy. 
+                // But this logic allows traversing own nodes to reach a distant own node (reinforce).
+                if (node && (node.owner === owner || nid === endId)) {
+                    visited.add(nid);
+                    queue.push({ id: nid, path: [...path, nid] });
+                }
+            }
+        }
+    }
+    return null;
+};
+
 export interface MovingUnitData {
   count: number;
   owner: Owner;
@@ -282,15 +331,4 @@ export const arriveNode = (
   newNodes[targetIndex] = target;
 
   return { newNodes, log, moveType };
-};
-
-// Legacy function (kept for reference or instant calculation if needed)
-export const executeMove = (
-  nodes: GameNode[], 
-  fromId: string, 
-  toId: string
-): { newNodes: GameNode[], log: string | null, moveType: MoveResultType } => {
-  const { newNodes: nodesAfterDepart, movingUnit } = departNode(nodes, fromId);
-  if (!movingUnit) return { newNodes: nodes, log: null, moveType: null };
-  return arriveNode(nodesAfterDepart, toId, movingUnit);
 };

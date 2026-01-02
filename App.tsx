@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Play, RotateCcw, BrainCircuit, User, ArrowRight, RefreshCw, Undo, X, Check, HelpCircle, Settings, Shield, Sword, Scale, ZoomIn, ZoomOut, Maximize, Save, Download, Trash2, Hexagon, Users } from 'lucide-react';
 import { GameState, GameNode, Owner, GameEdge, Point } from './types';
-import { generateMap, processTurnIncome, departNode, arriveNode, getVisibleNodeIds } from './utils/gameLogic';
+import { generateMap, processTurnIncome, departNode, arriveNode, getVisibleNodeIds, findPath } from './utils/gameLogic';
 import { getAIMoves } from './services/geminiService';
 import { Node } from './components/Node';
 import { MovingUnit } from './components/MovingUnit';
@@ -16,8 +16,7 @@ import { soundManager } from './utils/soundManager';
 
 interface MovingUnitState {
   id: string;
-  start: Point;
-  end: Point;
+  path: Point[];
   count: number;
   owner: Owner;
   targetId: string;
@@ -371,8 +370,7 @@ const App: React.FC = () => {
                 const newUnitId = Math.random().toString(36).substr(2, 9);
                 setMovingUnits(prev => [...prev, {
                     id: newUnitId,
-                    start: sourceNode.position,
-                    end: clickedNode.position,
+                    path: [sourceNode.position, clickedNode.position], // Direct moves only for now for players, or implement findPath here too if we want
                     count: movingUnit.count,
                     owner: movingUnit.owner,
                     targetId: clickedId
@@ -549,32 +547,40 @@ const App: React.FC = () => {
                 const targetNode = currentNodes.find(n => n.id === move.toId);
                 
                 if (sourceNode && targetNode && sourceNode.owner === Owner.AI && sourceNode.strength > 1) {
-                     const { newNodes, movingUnit } = departNode(currentNodes, move.fromId);
-                     currentNodes = newNodes; 
                      
-                     if (movingUnit) {
-                         setGameState(prev => {
-                             if (!prev) return null;
-                             const updatedNodes = prev.nodes.map(n => 
-                                 n.id === move.fromId ? { ...n, strength: 1 } : n
-                             );
-                             return { ...prev, nodes: updatedNodes };
-                         });
-
-                         const newUnitId = Math.random().toString(36).substr(2, 9);
-                         setMovingUnits(prev => [...prev, {
-                             id: newUnitId,
-                             start: sourceNode.position,
-                             end: targetNode.position,
-                             count: movingUnit.count,
-                             owner: movingUnit.owner,
-                             targetId: move.toId
-                         }]);
-
-                         await new Promise(resolve => setTimeout(resolve, 500));
+                     // Calculate Path
+                     const path = findPath(currentNodes, gameState.edges, move.fromId, move.toId, Owner.AI);
+                     
+                     // Only proceed if path is valid
+                     if (path) {
+                         const { newNodes, movingUnit } = departNode(currentNodes, move.fromId);
+                         currentNodes = newNodes; 
                          
-                         const { newNodes: nodesAfterArrival } = arriveNode(currentNodes, move.toId, movingUnit);
-                         currentNodes = nodesAfterArrival;
+                         if (movingUnit) {
+                             setGameState(prev => {
+                                 if (!prev) return null;
+                                 const updatedNodes = prev.nodes.map(n => 
+                                     n.id === move.fromId ? { ...n, strength: 1 } : n
+                                 );
+                                 return { ...prev, nodes: updatedNodes };
+                             });
+
+                             const newUnitId = Math.random().toString(36).substr(2, 9);
+                             setMovingUnits(prev => [...prev, {
+                                 id: newUnitId,
+                                 path: path,
+                                 count: movingUnit.count,
+                                 owner: movingUnit.owner,
+                                 targetId: move.toId
+                             }]);
+                             
+                             // Calculate wait time based on path length for animation to complete roughly
+                             const waitTime = Math.min((path.length - 1) * 400, 2000); 
+                             await new Promise(resolve => setTimeout(resolve, waitTime + 100));
+                             
+                             const { newNodes: nodesAfterArrival } = arriveNode(currentNodes, move.toId, movingUnit);
+                             currentNodes = nodesAfterArrival;
+                         }
                      }
                 }
             }
