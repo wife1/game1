@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Play, RotateCcw, BrainCircuit, User, ArrowRight, RefreshCw, Undo, X, Check, HelpCircle, Settings, Shield, Sword, Scale, ZoomIn, ZoomOut, Maximize, Save, Download, Trash2, Hexagon, Users } from 'lucide-react';
+import { Play, RotateCcw, BrainCircuit, User, ArrowRight, RefreshCw, Undo, X, Check, HelpCircle, Settings, Shield, Sword, Scale, ZoomIn, ZoomOut, Maximize, Save, Download, Trash2, Hexagon, Users, Music, Volume2, VolumeX } from 'lucide-react';
 import { GameState, GameNode, Owner, GameEdge, Point } from './types';
 import { generateMap, processTurnIncome, departNode, arriveNode, getVisibleNodeIds, findPath } from './utils/gameLogic';
 import { getAIMoves } from './services/geminiService';
@@ -50,6 +50,7 @@ const App: React.FC = () => {
   const [showGameMenu, setShowGameMenu] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [turnTransition, setTurnTransition] = useState<{ nextOwner: Owner } | null>(null);
+  const [isSoundOn, setIsSoundOn] = useState(true); // Default to Sound On
   
   // Game Settings
   const [fogEnabled, setFogEnabled] = useState(true);
@@ -75,6 +76,9 @@ const App: React.FC = () => {
     // Check for save on mount
     const saved = localStorage.getItem(SAVE_KEY);
     if (saved) setHasSave(true);
+    
+    // Initialize sound manager state
+    soundManager.setMuted(false);
   }, []);
 
   // Check save availability when settings open
@@ -119,6 +123,13 @@ const App: React.FC = () => {
 
   const handleRetryLevel = () => {
     startLevel(level, difficulty);
+  };
+
+  // --- Music/Sound Logic ---
+  const toggleSound = () => {
+      const newState = !isSoundOn;
+      setIsSoundOn(newState);
+      soundManager.setMuted(!newState); // muted = !isSoundOn
   };
 
   // --- Save / Load Logic ---
@@ -732,8 +743,17 @@ const App: React.FC = () => {
             {/* Top Right Controls */}
             <div className="absolute top-4 right-4 flex flex-col gap-3 pointer-events-auto z-30">
                 <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-xl flex flex-col">
+                     <Tooltip content={isSoundOn ? "Mute All Sound" : "Unmute All Sound"} position="left" className="w-full">
+                        <button onClick={toggleSound} className="w-full p-2.5 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border-b border-slate-700/50 rounded-t-xl">
+                            {isSoundOn ? (
+                                <Music size={18} className="text-blue-400" />
+                            ) : (
+                                <Music size={18} className="text-slate-600 opacity-50" />
+                            )}
+                        </button>
+                     </Tooltip>
                      <Tooltip content="Settings" position="left" className="w-full">
-                        <button onClick={() => setShowSettings(true)} className="w-full p-2.5 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border-b border-slate-700/50 rounded-t-xl"><Settings size={18} /></button>
+                        <button onClick={() => setShowSettings(true)} className="w-full p-2.5 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border-b border-slate-700/50"><Settings size={18} /></button>
                      </Tooltip>
                      <Tooltip content="Tutorial" position="left" className="w-full">
                         <button onClick={() => setShowTutorial(true)} className="w-full p-2.5 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors rounded-b-xl"><HelpCircle size={18} /></button>
