@@ -142,10 +142,12 @@ export const generateMap = (level: number = 1, difficulty: number = 1): { nodes:
     playerNode.owner = Owner.PLAYER;
     playerNode.strength = playerStartStrength;
     playerNode.isCapital = true; 
+    playerNode.capitalOwner = Owner.PLAYER;
 
     aiNode.owner = Owner.AI;
     aiNode.strength = aiStartStrength;
     aiNode.isCapital = true; // Mark AI start as Capital
+    aiNode.capitalOwner = Owner.AI;
   }
 
   return { nodes, edges };

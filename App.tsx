@@ -443,17 +443,24 @@ const App: React.FC = () => {
          // Capital Capture
          if (!isGameOver && moveType === 'CAPTURE') {
              const targetNode = newNodes.find(n => n.id === unitState.targetId);
-             if (targetNode?.isCapital) {
-                 if (targetNode.owner === Owner.PLAYER) {
+             
+             if (targetNode?.isCapital && targetNode.capitalOwner) {
+                 if (targetNode.owner === Owner.PLAYER && targetNode.capitalOwner === Owner.AI) {
+                     // Blue captured Red's capital
                      winner = Owner.PLAYER;
                      isGameOver = true;
-                     finalLogs.unshift("Blue Captured Capital! VICTORY!");
+                     finalLogs.unshift("Blue Captured Enemy Capital! VICTORY!");
                      soundManager.playWin();
-                 } else if (targetNode.owner === Owner.AI) {
+                 } else if (targetNode.owner === Owner.AI && targetNode.capitalOwner === Owner.PLAYER) {
+                     // Red captured Blue's capital
                      winner = Owner.AI;
                      isGameOver = true;
-                     finalLogs.unshift(gameMode === 'SINGLE' ? "Capital Lost! DEFEAT." : "Red Captured Capital! VICTORY!");
+                     finalLogs.unshift(gameMode === 'SINGLE' ? "Capital Lost! DEFEAT." : "Red Captured Enemy Capital! VICTORY!");
                      gameMode === 'SINGLE' ? soundManager.playLose() : soundManager.playWin();
+                 }
+                 // Recapture logic: If you reclaimed your own capital, no win, just a log
+                 else if (targetNode.owner === targetNode.capitalOwner) {
+                     finalLogs.unshift(`${targetNode.owner === Owner.PLAYER ? 'Blue' : 'Red'} reclaimed their Capital!`);
                  }
              }
          }
@@ -553,6 +560,7 @@ const App: React.FC = () => {
     // 2. AI Turn
     setIsProcessingAI(true);
     
+    // Minimal delay to start AI
     setTimeout(async () => {
         try {
             const aiMoves = await getAIMoves(nodesAfterIncome, gameState.edges, aggression, difficulty);
@@ -602,9 +610,10 @@ const App: React.FC = () => {
                                  targetId: move.toId
                              }]);
                              
-                             // Calculate wait time based on path length for animation to complete roughly
-                             const waitTime = Math.min((path.length - 1) * 400, 2000); 
-                             await new Promise(resolve => setTimeout(resolve, waitTime + 100));
+                             // Synchronized Speed: 300ms per hop to match MovingUnit.tsx
+                             const waitTime = Math.min((path.length - 1) * 300, 2500); 
+                             // Wait exactly the animation time
+                             await new Promise(resolve => setTimeout(resolve, waitTime + 50));
                              
                              const { newNodes: nodesAfterArrival } = arriveNode(currentNodes, move.toId, movingUnit);
                              currentNodes = nodesAfterArrival;
@@ -613,7 +622,7 @@ const App: React.FC = () => {
                 }
             }
             
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             // 3. AI Income & Turn End
             const nodesAfterAIIncome = processTurnIncome(currentNodes);
@@ -661,7 +670,7 @@ const App: React.FC = () => {
             setAiTargets(new Set()); // Cleanup
             soundManager.playTurnStart();
         }
-    }, 500);
+    }, 10);
   };
 
   // --- Render ---
@@ -690,9 +699,9 @@ const App: React.FC = () => {
 
   const getAggressionIcon = () => {
       switch(aggression) {
-          case 'cautious': return <Shield size={14} className="text-emerald-400" />;
-          case 'aggressive': return <Sword size={14} className="text-orange-400" />;
-          default: return <Scale size={14} className="text-yellow-400" />;
+          case 'cautious': return <Shield size={12} className="text-emerald-400" />;
+          case 'aggressive': return <Sword size={12} className="text-orange-400" />;
+          default: return <Scale size={12} className="text-yellow-400" />;
       }
   };
   
@@ -709,37 +718,37 @@ const App: React.FC = () => {
             <div className="absolute top-4 left-4 z-30 flex flex-col gap-2 pointer-events-auto items-start">
                  
                  {/* Level Info */}
-                 <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-700/50 shadow-xl mb-1">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Level</span>
-                    <span className="text-xl font-black text-white leading-none">{level}</span>
+                 <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700/50 shadow-lg mb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Level</span>
+                    <span className="text-lg font-black text-white leading-none">{level}</span>
                  </div>
 
                  {/* Player 1 (Blue) Stat */}
-                <div className={`flex items-center gap-3 bg-slate-900/10 backdrop-blur-md px-4 py-2.5 rounded-xl border transition-colors shadow-xl min-w-[180px] ${gameState.isPlayerTurn ? 'border-blue-500/50 bg-blue-500/10' : 'border-slate-700/50'}`}>
-                    <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400 shrink-0"><User size={20} /></div>
+                <div className={`flex items-center gap-2 bg-slate-900/10 backdrop-blur-md px-3 py-2 rounded-lg border transition-colors shadow-lg min-w-[130px] ${gameState.isPlayerTurn ? 'border-blue-500/50 bg-blue-500/10' : 'border-slate-700/50'}`}>
+                    <div className="p-1.5 bg-blue-500/20 rounded-md text-blue-400 shrink-0"><User size={16} /></div>
                     <div>
-                         <div className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Blue (P1)</div>
-                         <div className="text-lg font-bold leading-none text-slate-200">{playerStrength} <span className="text-sm font-normal text-slate-500">units</span></div>
-                         <div className="text-xs text-slate-500">{playerNodeCount} nodes</div>
+                         <div className="text-[9px] uppercase text-slate-500 font-bold tracking-wider leading-tight">Blue (P1)</div>
+                         <div className="text-base font-bold leading-none text-slate-200 mt-0.5">{playerStrength} <span className="text-[10px] font-normal text-slate-500">units</span></div>
+                         <div className="text-[10px] text-slate-500 leading-tight">{playerNodeCount} nodes</div>
                     </div>
                 </div>
 
                  {/* Player 2 / AI (Red) Stat */}
-                <div className={`flex items-center gap-3 bg-slate-900/10 backdrop-blur-md px-4 py-2.5 rounded-xl border transition-colors shadow-xl min-w-[180px] ${!gameState.isPlayerTurn && gameMode === 'MULTI' ? 'border-red-500/50 bg-red-500/10' : 'border-slate-700/50'}`}>
-                    <div className={`p-2 bg-red-500/20 rounded-lg text-red-400 shrink-0 transition-colors ${isProcessingAI ? 'bg-red-500/40 animate-pulse' : ''}`}>
-                         {gameMode === 'SINGLE' ? <BrainCircuit size={20} className={isProcessingAI ? "animate-spin-slow" : ""} /> : <User size={20} />}
+                <div className={`flex items-center gap-2 bg-slate-900/10 backdrop-blur-md px-3 py-2 rounded-lg border transition-colors shadow-lg min-w-[130px] ${!gameState.isPlayerTurn && gameMode === 'MULTI' ? 'border-red-500/50 bg-red-500/10' : 'border-slate-700/50'}`}>
+                    <div className={`p-1.5 bg-red-500/20 rounded-md text-red-400 shrink-0 transition-colors ${isProcessingAI ? 'bg-red-500/40 animate-pulse' : ''}`}>
+                         {gameMode === 'SINGLE' ? <BrainCircuit size={16} className={isProcessingAI ? "animate-spin-slow" : ""} /> : <User size={16} />}
                     </div>
                     <div>
-                         <div className="flex items-center gap-2">
-                            <div className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">{gameMode === 'SINGLE' ? 'HEX AI' : 'Red (P2)'}</div>
+                         <div className="flex items-center gap-1.5">
+                            <div className="text-[9px] uppercase text-slate-500 font-bold tracking-wider leading-tight">{gameMode === 'SINGLE' ? 'HEX AI' : 'Red (P2)'}</div>
                             {gameMode === 'SINGLE' && (
-                                <div className="px-1.5 py-0.5 bg-slate-800 rounded text-[10px] text-slate-400 flex items-center gap-1">
+                                <div className="px-1 py-0 bg-slate-800 rounded-[3px] text-[8px] text-slate-400 flex items-center gap-1">
                                     {getAggressionIcon()}
                                 </div>
                             )}
                          </div>
-                         <div className="text-lg font-bold leading-none text-slate-200">{aiStrength} <span className="text-sm font-normal text-slate-500">units</span></div>
-                         <div className="text-xs text-slate-500">{aiNodeCount} nodes</div>
+                         <div className="text-base font-bold leading-none text-slate-200 mt-0.5">{aiStrength} <span className="text-[10px] font-normal text-slate-500">units</span></div>
+                         <div className="text-[10px] text-slate-500 leading-tight">{aiNodeCount} nodes</div>
                     </div>
                 </div>
             </div>
@@ -751,7 +760,11 @@ const App: React.FC = () => {
                         <> <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" /> <span>BLUE TURN</span> </>
                      ) : (
                         <> 
-                           <div className={`w-2.5 h-2.5 rounded-full bg-red-500 ${isProcessingAI ? 'animate-pulse' : ''} shadow-[0_0_8px_rgba(239,68,68,0.5)]`} /> 
+                           {isProcessingAI ? (
+                               <BrainCircuit size={16} className="text-red-400 animate-pulse" />
+                           ) : (
+                               <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" /> 
+                           )}
                            <span>{isProcessingAI ? "AI THINKING..." : "RED TURN"}</span> 
                         </>
                      )}

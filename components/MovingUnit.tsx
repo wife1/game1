@@ -16,10 +16,10 @@ export const MovingUnit: React.FC<MovingUnitProps> = ({ id, path, count, owner, 
   const startTimeRef = useRef<number | null>(null);
   const reqRef = useRef<number | null>(null);
   
-  // Total duration based on path length (hops)
-  // 500ms per hop, max 2000ms
-  const segmentDuration = 400;
-  const totalDuration = Math.min((path.length - 1) * segmentDuration, 2000); 
+  // Slower Movement: 300ms per hop
+  const segmentDuration = 300;
+  // Cap max duration to prevent extremely long travels from blocking gameplay too long
+  const totalDuration = Math.min((path.length - 1) * segmentDuration, 2500); 
 
   useEffect(() => {
     const animate = (time: number) => {

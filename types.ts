@@ -16,6 +16,7 @@ export interface GameNode {
   strength: number;
   capacity: number; // Max strength before growth slows/stops (optional mechanic, simplified for now to just be visualization scale)
   isCapital?: boolean;
+  capitalOwner?: Owner; // Tracks who the capital originally belonged to (for victory conditions)
 }
 
 export interface GameEdge {

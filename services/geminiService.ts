@@ -14,7 +14,7 @@ const isFrontline = (nodeId: string, nodes: GameNode[], adj: Map<string, string[
 /**
  * Fallback Heuristic AI
  * Used when the Gemini API is unavailable or rate-limited.
- * Implements basic strategy: Defense/Fortify > Attack Weakest Enemy > Expand to Weakest Neutral > Reinforce
+ * Implements strategy: Defense/Fortify > Attack Weakest Enemy (High Adjacency First) > Expand to Weakest Neutral (High Adjacency First) > Reinforce
  */
 const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[] => {
   const moves: AIMoveRequest[] = [];
@@ -42,11 +42,16 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       }
   });
 
-  // Identify Player Neighbor Ids for pressure logic
-  const playerNeighborIds = new Set<string>();
+  // Count how many player nodes are adjacent to each node (for Pressure logic)
+  const playerAdjacencyCount = new Map<string, number>();
+  // Initialize all nodes with 0
+  nodes.forEach(n => playerAdjacencyCount.set(n.id, 0));
+  
   nodes.filter(n => n.owner === Owner.PLAYER).forEach(pn => {
       const neighbors = adj.get(pn.id) || [];
-      neighbors.forEach(nid => playerNeighborIds.add(nid));
+      neighbors.forEach(nid => {
+          playerAdjacencyCount.set(nid, (playerAdjacencyCount.get(nid) || 0) + 1);
+      });
   });
 
   for (const source of aiNodes) {
@@ -57,12 +62,17 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
 
       // --- STRATEGY 1: HOLD THE LINE (Self-Defense) ---
       // If I am threatened, I should only move if I can ELIMINATE the threat.
-      // Otherwise, I stay to defend (effectively reinforcing myself).
       if (isSourceThreatened) {
           const killableEnemies = neighbors.filter(n => n.owner === Owner.PLAYER && n.strength < source.strength);
           if (killableEnemies.length > 0) {
               killableEnemies.sort((a, b) => {
+                // Priority: Capital > High Adjacency > Weakness
                 if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
+                
+                const aAdj = playerAdjacencyCount.get(a.id) || 0;
+                const bAdj = playerAdjacencyCount.get(b.id) || 0;
+                if (aAdj !== bAdj) return bAdj - aAdj; // Maximize player adjacency (destroy hubs)
+
                 return b.strength - a.strength;
               });
               moves.push({ fromId: source.id, toId: killableEnemies[0].id });
@@ -93,40 +103,44 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       if (killableEnemies.length > 0) {
           killableEnemies.sort((a, b) => {
               if (a.isCapital !== b.isCapital) return a.isCapital ? -1 : 1;
+              
+              // PRIMARY: Attack nodes adjacent to MULTIPLE player units (Pressure/Trap)
+              const aAdj = playerAdjacencyCount.get(a.id) || 0;
+              const bAdj = playerAdjacencyCount.get(b.id) || 0;
+              if (aAdj !== bAdj) return bAdj - aAdj; 
+
               return b.strength - a.strength; 
           });
           moves.push({ fromId: source.id, toId: killableEnemies[0].id });
           continue; 
       }
 
-      // --- STRATEGY 4: EXPAND (Capture Neutrals) ---
+      // --- STRATEGY 4: EXPAND (Capture Neutrals with Pressure) ---
       const neutrals = neighbors.filter(n => n.owner === Owner.NEUTRAL);
       const capturableNeutrals = neutrals.filter(n => n.strength < source.strength);
 
       if (capturableNeutrals.length > 0) {
           capturableNeutrals.sort((a, b) => {
-              const aIsThreat = playerNeighborIds.has(a.id);
-              const bIsThreat = playerNeighborIds.has(b.id);
-              if (aIsThreat && !bIsThreat) return -1;
-              if (!aIsThreat && bIsThreat) return 1;
-              return a.strength - b.strength;
+              // Priority: Adjacent to Player (Pressure) > Weakest (Cost)
+              const aPressure = playerAdjacencyCount.get(a.id) || 0;
+              const bPressure = playerAdjacencyCount.get(b.id) || 0;
+              
+              if (aPressure !== bPressure) return bPressure - aPressure; // Higher pressure first (Trap)
+              
+              return a.strength - b.strength; // Then cheapest to capture
           });
           moves.push({ fromId: source.id, toId: capturableNeutrals[0].id });
           continue; 
       }
 
       // --- STRATEGY 5: REINFORCE (Deep Move to Frontline) ---
-      // If we are safe and have excess troops, find the nearest threatened node to reinforce.
-      if (source.strength > 5 && !isSourceThreatened) {
-          // BFS to find nearest threatened node (BFS is already optimal for unweighted distance)
-          // We can't use findPath easily here without importing it or duplicating bfs. 
-          // Let's implement a quick BFS search for a target.
+      // Low threshold to encourage rapid movement and consumption
+      if (source.strength > 2 && !isSourceThreatened) {
           
           let queue = [source.id];
           let visited = new Set([source.id]);
           let bestTargetId: string | null = null;
           
-          // Limit search depth to avoid full map scans
           let depth = 0;
           const MAX_DEPTH = 6; 
 
@@ -157,9 +171,9 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
           if (bestTargetId) {
               moves.push({ fromId: source.id, toId: bestTargetId });
           } else {
-             // Fallback: Random shuffle to prevent stagnation if no frontline found
+             // Fallback: Random shuffle to prevent stagnation
              const friendlies = neighbors.filter(n => n.owner === Owner.AI);
-              if (friendlies.length > 0 && Math.random() > 0.5) {
+              if (friendlies.length > 0 && Math.random() > 0.3) {
                   const randomFriendly = friendlies[Math.floor(Math.random() * friendlies.length)];
                   moves.push({ fromId: source.id, toId: randomFriendly.id });
               }
@@ -205,49 +219,39 @@ export const getAIMoves = async (
   let aggressionPrompt = "";
   switch (aggression) {
     case 'cautious':
-      aggressionPrompt = `STRATEGY: DEFENSIVE. REINFORCE front lines. EXPAND cautiously. DEFEND Capital.`;
+      aggressionPrompt = `Strategy: Defensive. Reinforce lines.`;
       break;
     case 'aggressive':
-      aggressionPrompt = `STRATEGY: RUSH. ATTACK PLAYER. EXPAND rapidly. MOVE FRONT.`;
+      aggressionPrompt = `Strategy: Aggressive. Rush Player.`;
       break;
-    default: // balanced
-      aggressionPrompt = `STRATEGY: EXPANSIONIST. EXPAND income. ATTACK weak neighbors. OPPORTUNISM.`;
+    default:
+      aggressionPrompt = `Strategy: Expansionist. Attack weak.`;
       break;
-  }
-
-  let difficultyPrompt = "";
-  if (difficulty < 1.0) {
-    difficultyPrompt = `DIFFICULTY: EASY. Make somewhat random moves. Focus on expansion but make mistakes.`;
-  } 
-  else if (difficulty >= 1.5) {
-    difficultyPrompt = `DIFFICULTY: HARD. Play optimally. Maximize damage. Ruthlessly exploit weakness. Anticipate player moves.`;
-  } 
-  else {
-    difficultyPrompt = `DIFFICULTY: NORMAL. Play logically. Balance offense and defense.`;
   }
 
   const systemPrompt = `
     Play Konquest as 'AI'. Eliminate 'PLAYER'.
     Rules: 
-    1. Moves send ALL strength-1. Moving leaves the source node with 1 strength.
-    2. Combat: Attacker Strength vs Defender Strength. Winner keeps difference.
-    3. Bonus: Capturing a node grants +2 immediate strength to the captured node (Fury).
+    1. Moves send ALL units - 1.
+    2. Combat: Atk vs Def.
+    3. Capture Bonus: +2 strength.
 
-    Input: JSON with 'nodes' array (id, o=owner, s=strength, c=capital) and 'adj' object (id -> list of neighbor ids).
-    Output: JSON moves array {fromId, toId}.
+    Input: JSON 'nodes' (id, o=owner, s=strength, c=capital) & 'adj'.
+    Output: JSON moves {fromId, toId}.
     
-    CORE STRATEGY: FORTIFICATION & DEFENSE
-    1. THREAT ASSESSMENT: Any AI node adjacent to a PLAYER node is "Threatened".
-    2. HOLD THE LINE: Threatened AI nodes MUST NOT move units away (leaving them with 1 HP) unless they are attacking to capture a weaker enemy immediately. Preserving strength on the frontline is critical.
-    3. FORTIFY: Safe AI nodes (not adjacent to Player) MUST prioritize moving units into adjacent Threatened AI nodes to reinforce them. 
-    4. PROTECT CAPITAL: The AI Capital must be defended at all costs. Prioritize reinforcing it if threatened.
+    CORE STRATEGY: VOLUME & PRESSURE
+    1. VOLUME: Generate MANY moves. If >1 strength & useful, move it. Eat map.
+    2. TRAPS: Target nodes adjacent to MANY Player nodes (Pressure).
+    3. THREATS: Defend if adjacent to Player. Don't leave unless attacking.
+    4. FORTIFY: Safe nodes reinforce Threatened nodes.
     
-    SECONDARY GOALS:
-    5. CAPTURE: Attack enemy nodes when you have advantage.
-    6. EXPAND: Capture neutrals to grow economy.
+    EXECUTION:
+    - Kill enemy if possible.
+    - Capture High-Pressure Neutrals.
+    - Capture Free Neutrals.
+    - Reinforce Front.
     
     ${aggressionPrompt}
-    ${difficultyPrompt}
   `;
 
   try {

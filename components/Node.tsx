@@ -119,7 +119,11 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
     if (!isVisible) return "";
     
     let typeLabel = "Node";
-    if (node.isCapital) typeLabel = "Capital";
+    if (node.isCapital) {
+        if (node.capitalOwner === Owner.PLAYER) typeLabel = "Home Base (Defend!)";
+        else if (node.capitalOwner === Owner.AI) typeLabel = "Enemy Fortress (Capture to Win!)";
+        else typeLabel = "Capital";
+    }
     
     let ownerLabel = "Neutral";
     if (node.owner === Owner.PLAYER) ownerLabel = "Blue";
