@@ -44,6 +44,9 @@ const App: React.FC = () => {
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
   const [movingUnits, setMovingUnits] = useState<MovingUnitState[]>([]);
+  
+  // Track AI Intentions for UI feedback
+  const [aiTargets, setAiTargets] = useState<Set<string>>(new Set());
 
   // UI State
   const [showSettings, setShowSettings] = useState(false);
@@ -112,6 +115,7 @@ const App: React.FC = () => {
     setUndoConfirmOpen(false);
     setMovingUnits([]);
     setTurnTransition(null);
+    setAiTargets(new Set());
     setTransform({ x: 0, y: 0, scale: 1 }); // Reset zoom
   };
 
@@ -185,6 +189,7 @@ const App: React.FC = () => {
             setMovingUnits([]);
             setSelectedNodeId(null);
             setTurnTransition(null);
+            setAiTargets(new Set());
             setTransform({ x: 0, y: 0, scale: 1 });
             
             addLog("Game loaded successfully.");
@@ -533,6 +538,7 @@ const App: React.FC = () => {
     setHistory([]);
     setUndoConfirmOpen(false);
     setSelectedNodeId(null);
+    setAiTargets(new Set()); // Clear previous targets
     
     // 1. Update State after P1 income
     setGameState(prev => {
@@ -551,6 +557,10 @@ const App: React.FC = () => {
         try {
             const aiMoves = await getAIMoves(nodesAfterIncome, gameState.edges, aggression, difficulty);
             
+            // Set intended targets for UI visualization
+            const targets = new Set(aiMoves.map(m => m.toId));
+            setAiTargets(targets);
+
             let currentNodes = [...nodesAfterIncome];
             
             for (const move of aiMoves) {
@@ -564,6 +574,13 @@ const App: React.FC = () => {
                      
                      // Only proceed if path is valid
                      if (path) {
+                         // Remove this specific target from visualization as action starts
+                         setAiTargets(prev => {
+                             const next = new Set(prev);
+                             next.delete(move.toId);
+                             return next;
+                         });
+
                          const { newNodes, movingUnit } = departNode(currentNodes, move.fromId);
                          currentNodes = newNodes; 
                          
@@ -641,6 +658,7 @@ const App: React.FC = () => {
             });
         } finally {
             setIsProcessingAI(false);
+            setAiTargets(new Set()); // Cleanup
             soundManager.playTurnStart();
         }
     }, 500);
@@ -814,6 +832,9 @@ const App: React.FC = () => {
                             getConnectedNodeIds(selectedNodeId).includes(node.id));
 
                         const isAttack = !!(isTargetable && selectedNode && selectedNode.owner !== node.owner);
+                        
+                        // AI Targeting Visualization
+                        const isTargetedByAI = aiTargets.has(node.id);
 
                         return (
                             <Node
@@ -826,6 +847,7 @@ const App: React.FC = () => {
                                 onClick={handleNodeClick}
                                 isAIThinking={isProcessingAI}
                                 isAttack={isAttack}
+                                isTargetedByAI={isTargetedByAI}
                             />
                         );
                     })}

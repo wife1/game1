@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { GameNode, Owner } from '../types';
 import { COLORS, HEX_SIZE, HOVER_COLORS } from '../constants';
-import { User, Shield, Swords, Zap, Crown, Castle, Check, X } from 'lucide-react';
+import { User, Shield, Swords, Zap, Crown, Castle, Check, X, Crosshair } from 'lucide-react';
 
 interface NodeProps {
   node: GameNode;
@@ -11,10 +11,11 @@ interface NodeProps {
   incomingStrength: number;
   isAIThinking?: boolean;
   isAttack?: boolean;
+  isTargetedByAI?: boolean;
   onClick: (id: string) => void;
 }
 
-export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVisible, incomingStrength, isAIThinking, isAttack, onClick }) => {
+export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVisible, incomingStrength, isAIThinking, isAttack, isTargetedByAI, onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [bumpScale, setBumpScale] = useState(1);
   const [showRipple, setShowRipple] = useState(false);
@@ -81,6 +82,9 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
   const getStroke = () => {
       if (!isVisible) return '#334155'; // Slate 700 for Fog Border
       
+      // Imminent AI Attack Warning (High Priority)
+      if (isTargetedByAI && isHovered) return '#ef4444';
+
       // Combat Prediction Overlay (Attack on Enemy or Neutral)
       if (isHovered && isTargetable && incomingStrength > 0 && isAttack) {
           return canConquer ? '#4ade80' : '#ef4444'; 
@@ -93,7 +97,11 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
   
   const stroke = getStroke();
   
-  const strokeWidth = (isHovered && isTargetable && incomingStrength > 0 && isAttack) ? 4 : (isSelected ? 4 : isTargetable ? 3 : 2);
+  let strokeWidth = (isHovered && isTargetable && incomingStrength > 0 && isAttack) ? 4 : (isSelected ? 4 : isTargetable ? 3 : 2);
+  
+  // Thicken stroke for AI Warning
+  if (isTargetedByAI && isHovered) strokeWidth = 4;
+
   const opacity = isVisible ? 1 : 0.3;
   const cursor = isVisible ? 'pointer' : 'default';
 
@@ -122,6 +130,11 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
     const income = node.isCapital ? 5 : 1;
     let baseText = `${title}\nStrength: ${node.strength}\n${node.owner !== Owner.NEUTRAL ? `Generates +${income} unit/turn` : "Capture to grow"}`;
     
+    // AI Attack Warning
+    if (isTargetedByAI && isAIThinking) {
+        baseText += `\n\n⚠️ WARNING: IMMINENT AI ATTACK DETECTED!`;
+    }
+
     // Combat Preview
     if (isHovered && isTargetable && incomingStrength > 0 && isAttack) {
         const result = canConquer ? "VICTORY GUARANTEED" : "ATTACK WILL FAIL";
@@ -193,6 +206,18 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
         />
       )}
 
+      {/* AI Warning Glow Ring */}
+      {isTargetedByAI && isVisible && (
+         <polygon
+            points={pointsString}
+            fill="none"
+            stroke="#ef4444"
+            strokeOpacity={0.8}
+            strokeWidth={3}
+            className="animate-pulse-ring"
+         />
+      )}
+
       {/* Outer Glow for selection */}
       {isSelected && isVisible && (
         <polygon
@@ -236,6 +261,16 @@ export const Node: React.FC<NodeProps> = ({ node, isSelected, isTargetable, isVi
                    <g transform="translate(-6, -6)">
                        {canConquer ? <Check size={12} color="white" strokeWidth={4} /> : <X size={12} color="white" strokeWidth={4} />}
                    </g>
+                </g>
+            )}
+
+            {/* AI Warning Icon Overlay */}
+            {isTargetedByAI && isHovered && (
+                <g transform="translate(14, -22)" className="animate-bounce">
+                    <circle r="9" fill="#ef4444" stroke="white" strokeWidth="1.5" />
+                    <g transform="translate(-6, -6)">
+                        <Crosshair size={12} color="white" strokeWidth={3} />
+                    </g>
                 </g>
             )}
 

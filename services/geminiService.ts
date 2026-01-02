@@ -56,6 +56,8 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
       const isSourceThreatened = threatenedAiNodes.has(source.id);
 
       // --- STRATEGY 1: HOLD THE LINE (Self-Defense) ---
+      // If I am threatened, I should only move if I can ELIMINATE the threat.
+      // Otherwise, I stay to defend (effectively reinforcing myself).
       if (isSourceThreatened) {
           const killableEnemies = neighbors.filter(n => n.owner === Owner.PLAYER && n.strength < source.strength);
           if (killableEnemies.length > 0) {
@@ -66,13 +68,21 @@ const getFallbackMoves = (nodes: GameNode[], edges: GameEdge[]): AIMoveRequest[]
               moves.push({ fromId: source.id, toId: killableEnemies[0].id });
               continue; 
           }
+          // HOLD POSITION: Do not move away if threatened and can't kill.
           continue; 
       }
 
       // --- STRATEGY 2: FORTIFY (Help Neighbors) ---
+      // If I am SAFE, I should help THREATENED neighbors.
       const threatenedFriendlies = neighbors.filter(n => n.owner === Owner.AI && threatenedAiNodes.has(n.id));
       if (threatenedFriendlies.length > 0) {
-          threatenedFriendlies.sort((a, b) => a.strength - b.strength);
+          threatenedFriendlies.sort((a, b) => {
+             // Priority 1: Save the Capital
+             if (a.isCapital && !b.isCapital) return -1;
+             if (!a.isCapital && b.isCapital) return 1;
+             // Priority 2: Reinforce Weakest
+             return a.strength - b.strength;
+          });
           moves.push({ fromId: source.id, toId: threatenedFriendlies[0].id });
           continue; 
       }
@@ -218,19 +228,23 @@ export const getAIMoves = async (
 
   const systemPrompt = `
     Play Konquest as 'AI'. Eliminate 'PLAYER'.
-    Rules: Moves send ALL strength-1. Moving leaves the source node with 1 strength.
+    Rules: 
+    1. Moves send ALL strength-1. Moving leaves the source node with 1 strength.
+    2. Combat: Attacker Strength vs Defender Strength. Winner keeps difference.
+    3. Bonus: Capturing a node grants +2 immediate strength to the captured node (Fury).
+
     Input: JSON with 'nodes' array (id, o=owner, s=strength, c=capital) and 'adj' object (id -> list of neighbor ids).
     Output: JSON moves array {fromId, toId}.
     
-    Goals:
-    1. Capture Nodes (My Strength > Their Strength).
-    2. DEFENSE & FORTIFICATION: 
-       - If an AI node is adjacent to a PLAYER node, it is THREATENED. 
-       - PRIORITIZE moving units from SAFE AI nodes into THREATENED AI nodes to fortify them.
-       - You can move units through friendly territory to reach a distant node.
-       - DO NOT move units OUT of a threatened node unless attacking a weaker enemy.
-    3. PRESSURE: When capturing Neutrals, prioritize those adjacent to PLAYER nodes.
-    4. Protect Capital.
+    CORE STRATEGY: FORTIFICATION & DEFENSE
+    1. THREAT ASSESSMENT: Any AI node adjacent to a PLAYER node is "Threatened".
+    2. HOLD THE LINE: Threatened AI nodes MUST NOT move units away (leaving them with 1 HP) unless they are attacking to capture a weaker enemy immediately. Preserving strength on the frontline is critical.
+    3. FORTIFY: Safe AI nodes (not adjacent to Player) MUST prioritize moving units into adjacent Threatened AI nodes to reinforce them. 
+    4. PROTECT CAPITAL: The AI Capital must be defended at all costs. Prioritize reinforcing it if threatened.
+    
+    SECONDARY GOALS:
+    5. CAPTURE: Attack enemy nodes when you have advantage.
+    6. EXPAND: Capture neutrals to grow economy.
     
     ${aggressionPrompt}
     ${difficultyPrompt}
