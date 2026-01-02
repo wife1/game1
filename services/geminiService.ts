@@ -271,7 +271,19 @@ export const getAIMoves = async (
     return data.moves || [];
 
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    const msg = error.message || '';
+    
+    // Check for Quota limits or network errors
+    const isQuota = msg.includes('429') || 
+                    error.status === 'RESOURCE_EXHAUSTED' || 
+                    (error.error && error.error.code === 429);
+
+    if (isQuota) {
+        console.warn("Gemini Quota Exceeded. Using Fallback AI.");
+    } else {
+        console.error("Gemini API Error:", error);
+    }
+    
     return getFallbackMoves(nodes, edges);
   }
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, MousePointer, Shield, Swords, User, BrainCircuit, Target, ArrowRight, Activity, Clock, Check } from 'lucide-react';
+import { X, MousePointer, Shield, Swords, User, BrainCircuit, Target, ArrowRight, Activity, Clock, Check, Castle } from 'lucide-react';
 
 interface TutorialModalProps {
   onClose: () => void;
@@ -45,13 +45,28 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ onClose }) => {
               <User size={20} /> Objective
             </h3>
             <div className="flex flex-col md:flex-row gap-6 items-center">
-                <p className="text-slate-300 text-sm md:text-base leading-relaxed flex-1">
-                  You command the <span className="text-blue-400 font-bold">Blue Army</span>. 
-                  Your mission is to eliminate the <span className="text-red-400 font-bold">Red AI</span>.
-                  <br/><br/>
-                  Capture nodes to expand your territory. More nodes = more income per turn.
-                </p>
-                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 flex items-center gap-8">
+                <div className="flex-1 space-y-4">
+                    <p className="text-slate-300 text-sm md:text-base leading-relaxed">
+                      You command the <span className="text-blue-400 font-bold">Blue Army</span>. 
+                      Your goal is total domination. Capture nodes to expand territory and increase income.
+                    </p>
+                    
+                    <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 space-y-2">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">How to Win</div>
+                        <ul className="space-y-2 text-sm text-slate-200">
+                            <li className="flex items-center gap-2">
+                                <span className="bg-amber-500/20 text-amber-400 p-1.5 rounded"><Castle size={16} /></span>
+                                <span>Capture the enemy <strong>Capital</strong> (Castle)</span>
+                            </li>
+                            <li className="flex items-center gap-2">
+                                <span className="bg-red-500/20 text-red-400 p-1.5 rounded"><Swords size={16} /></span>
+                                <span>OR Eliminate <strong>all enemy units</strong></span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 flex items-center gap-8 shrink-0">
                      <HexVisual strength={25} owner="PLAYER" label="YOU" />
                      <div className="text-slate-600 font-bold text-xs">VS</div>
                      <HexVisual strength={25} owner="AI" label="ENEMY" />
