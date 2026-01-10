@@ -56,11 +56,11 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ onClose }) => {
                         <ul className="space-y-2 text-sm text-slate-200">
                             <li className="flex items-center gap-2">
                                 <span className="bg-amber-500/20 text-amber-400 p-1.5 rounded"><Castle size={16} /></span>
-                                <span>Capture the enemy <strong>Capital</strong> (Castle)</span>
+                                <span>Capture the competitor's <strong>Castle</strong> (Capital)</span>
                             </li>
                             <li className="flex items-center gap-2">
                                 <span className="bg-red-500/20 text-red-400 p-1.5 rounded"><Swords size={16} /></span>
-                                <span>OR Eliminate <strong>all enemy units</strong></span>
+                                <span>Eliminate <strong>all enemy units</strong> from the map</span>
                             </li>
                         </ul>
                     </div>
